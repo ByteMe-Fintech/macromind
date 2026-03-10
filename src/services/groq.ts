@@ -1,3 +1,4 @@
+import Groq from "groq-sdk";
 import { fixUrl } from "../utils/url";
 
 export interface CausalNode {
@@ -22,20 +23,24 @@ export interface DebateResponse {
   tensionScore: number;
 }
 
-const callGroq = async (messages: any[], model = "llama-3.3-70b-versatile") => {
-  const response = await fetch("/api/groq/chat", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ messages, model }),
-  });
+// 1. Initialize Groq directly for the browser
+const groq = new Groq({
+  apiKey: import.meta.env.VITE_GROQ_API_KEY,
+  dangerouslyAllowBrowser: true 
+});
 
-  if (!response.ok) {
-    const error = await response.json();
-    throw new Error(error.error || "Groq API call failed");
+const callGroq = async (messages: any[], model = "llama-3.3-70b-versatile", json = false) => {
+  const options: any = {
+    messages,
+    model,
+  };
+  
+  if (json) {
+    options.response_format = { type: "json_object" };
   }
 
-  const data = await response.json();
-  return data.choices[0].message.content;
+  const chatCompletion = await groq.chat.completions.create(options);
+  return chatCompletion.choices[0].message.content || "";
 };
 
 const cleanJsonResponse = (text: string) => {
@@ -75,10 +80,10 @@ export const getCausalGraph = async (headline: string, content: string) => {
   Ensure all link sources and targets exist in the nodes array.`;
 
   const messages = [{ role: "user", content: prompt }];
-  const responseText = await callGroq(messages);
+  const responseText = await callGroq(messages, "llama-3.3-70b-versatile", true);
   
   try {
-    const data = JSON.parse(cleanJsonResponse(responseText));
+    const data = JSON.parse(responseText);
     
     const nodeIds = new Set(data.nodes.map((n: any) => n.id));
     data.links = data.links.filter((l: any) => nodeIds.has(l.source) && nodeIds.has(l.target));
@@ -111,10 +116,10 @@ export const getDebate = async (headline: string, content: string) => {
   - 'tensionScore': 0-100`;
 
   const messages = [{ role: "user", content: prompt }];
-  const responseText = await callGroq(messages);
+  const responseText = await callGroq(messages, "llama-3.3-70b-versatile", true);
   
   try {
-    return JSON.parse(cleanJsonResponse(responseText));
+    return JSON.parse(responseText);
   } catch (err) {
     console.error("Groq Parse Error:", err, responseText);
     throw new Error("Failed to parse Groq response as JSON");
@@ -133,15 +138,8 @@ export const getHistoricalMemory = async (theme: string) => {
   Return ONLY a JSON object with a key 'events' containing the array.`;
 
   try {
-    const origin = window.location.origin;
-    const response = await fetch(`${origin}/api/groq/historical-memory`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ prompt }),
-    });
-
-    if (!response.ok) throw new Error("Failed to fetch historical memory from Groq");
-    const data = await response.json();
+    const responseText = await callGroq([{ role: "user", content: prompt }], "llama-3.1-8b-instant", true);
+    const data = JSON.parse(responseText);
     const events = data.events || [];
 
     return events.map((item: any) => {
@@ -180,15 +178,8 @@ export const fetchLiveSignals = async () => {
   Return ONLY the results as a JSON object with a key 'signals' containing the array.`;
 
   try {
-    const origin = window.location.origin;
-    const response = await fetch(`${origin}/api/groq/live-signals`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ prompt }),
-    });
-
-    if (!response.ok) throw new Error("Failed to generate live signals from Groq");
-    const data = await response.json();
+    const responseText = await callGroq([{ role: "user", content: prompt }], "llama-3.3-70b-versatile", true);
+    const data = JSON.parse(responseText);
     const signals = data.signals || [];
 
     return signals.map((item: any) => ({
