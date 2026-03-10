@@ -1,6 +1,6 @@
-# MacroMind: Macro-Economic Signal Intelligence
+# Macromind: Macro-Economic Signal Intelligence
 
-MacroMind is a high-fidelity dashboard for real-time global macro-economic signal analysis. It performs multi-agent causal reasoning and visualizes complex global interdependencies through interactive maps and graphs, powered exclusively by the Groq Llama-3 ecosystem.
+Macromind is a high-fidelity dashboard for real-time global macro-economic signal analysis. It performs multi-agent causal reasoning and visualizes complex global interdependencies through interactive maps and graphs, powered exclusively by the Groq Llama-3 ecosystem.
 
 
 
