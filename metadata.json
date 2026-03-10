@@ -1,0 +1,5 @@
+{
+  "name": "MacroMind",
+  "description": "A causal macro-economic tracker that uses multi-agent AI debates and knowledge graphs to predict second-order market risks.",
+  "requestFramePermissions": []
+}

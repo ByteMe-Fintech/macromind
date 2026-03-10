@@ -1,0 +1,193 @@
+import { fixUrl } from "../utils/url";
+
+export interface CausalNode {
+  id: string;
+  label: string;
+  type: "event" | "asset" | "risk";
+}
+
+export interface CausalLink {
+  source: string;
+  target: string;
+  description: string;
+}
+
+export interface DebateResponse {
+  bull: string;
+  bullVerdict: string;
+  bear: string;
+  bearVerdict: string;
+  riskManager: string;
+  riskVerdict: string;
+  tensionScore: number;
+}
+
+const callGroq = async (messages: any[], model = "llama-3.3-70b-versatile") => {
+  const response = await fetch("/api/groq/chat", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ messages, model }),
+  });
+
+  if (!response.ok) {
+    const error = await response.json();
+    throw new Error(error.error || "Groq API call failed");
+  }
+
+  const data = await response.json();
+  return data.choices[0].message.content;
+};
+
+const cleanJsonResponse = (text: string) => {
+  let cleaned = text.trim();
+  const startBracket = cleaned.indexOf('[');
+  const startBrace = cleaned.indexOf('{');
+  let first = -1;
+  if (startBracket !== -1 && (startBrace === -1 || startBracket < startBrace)) {
+    first = startBracket;
+  } else {
+    first = startBrace;
+  }
+  const lastBracket = cleaned.lastIndexOf(']');
+  const lastBrace = cleaned.lastIndexOf('}');
+  let last = -1;
+  if (lastBracket !== -1 && (lastBrace === -1 || lastBracket > lastBrace)) {
+    last = lastBracket;
+  } else {
+    last = lastBrace;
+  }
+  if (first !== -1 && last !== -1 && last > first) {
+    return cleaned.substring(first, last + 1);
+  }
+  return cleaned;
+};
+
+export const getCausalGraph = async (headline: string, content: string) => {
+  const prompt = `Analyze the following news and generate a highly specific, complex causal knowledge graph (nodes and links).
+  Do NOT be generic. Identify specific assets, specific risks, and specific economic mechanisms mentioned or implied.
+  
+  News: ${headline}
+  Content: ${content}
+  
+  Return ONLY a valid JSON object with 'nodes' and 'links'.
+  Nodes should have 'id' (unique string), 'label' (short text), and 'type' (event, asset, or risk).
+  Links should have 'source' (must match a node id), 'target' (must match a node id), and 'description'.
+  Ensure all link sources and targets exist in the nodes array.`;
+
+  const messages = [{ role: "user", content: prompt }];
+  const responseText = await callGroq(messages);
+  
+  try {
+    const data = JSON.parse(cleanJsonResponse(responseText));
+    
+    const nodeIds = new Set(data.nodes.map((n: any) => n.id));
+    data.links = data.links.filter((l: any) => nodeIds.has(l.source) && nodeIds.has(l.target));
+    
+    return data;
+  } catch (err) {
+    console.error("Groq Parse Error:", err, responseText);
+    throw new Error("Failed to parse Groq response as JSON");
+  }
+};
+
+export const getDebate = async (headline: string, content: string) => {
+  const prompt = `Run a high-stakes, specific debate between three sophisticated financial personas regarding this news:
+  
+  Headline: ${headline}
+  Content: ${content}
+  
+  Personas:
+  1. Bull Agent: Aggressively optimistic, identifies why the market is wrong to be worried, focuses on growth and resilience.
+  2. Bear Agent: Deeply skeptical, identifies hidden structural risks, second-order contagion, and why the consensus is too complacent.
+  3. Risk Manager: Coldly pragmatic, focuses on what this means for a global macro portfolio and how to hedge the specific risks mentioned.
+  
+  Return ONLY a valid JSON object with:
+  - 'bull': markdown analysis (be specific to the event)
+  - 'bullVerdict': 1-2 word action (e.g. BUY, HOLD, ACCUMULATE)
+  - 'bear': markdown analysis (be specific to the event)
+  - 'bearVerdict': 1-2 word action (e.g. SELL, REDUCE, HEDGE)
+  - 'riskManager': markdown analysis (be specific to the event)
+  - 'riskVerdict': 1-2 word action (e.g. NEUTRAL, DEFENSIVE, CAUTION)
+  - 'tensionScore': 0-100`;
+
+  const messages = [{ role: "user", content: prompt }];
+  const responseText = await callGroq(messages);
+  
+  try {
+    return JSON.parse(cleanJsonResponse(responseText));
+  } catch (err) {
+    console.error("Groq Parse Error:", err, responseText);
+    throw new Error("Failed to parse Groq response as JSON");
+  }
+};
+
+export const getHistoricalMemory = async (theme: string) => {
+  const currentTime = new Date().toISOString();
+  const prompt = `Current Time: ${currentTime}
+  Find 3 distinct, real historical macro-economic events from the last 20 years that relate to the theme: "${theme}". 
+  
+  For each event, you MUST provide:
+  1. 'date': YYYY-MM-DD
+  2. 'title': The actual headline or event name
+  3. 'summary': 2-3 sentence analysis.
+  4. 'link': A relevant URL (e.g. from Wikipedia or a major news site).
+  
+  Return ONLY a JSON array of objects.`;
+
+  const messages = [{ role: "user", content: prompt }];
+  const responseText = await callGroq(messages);
+  
+  try {
+    const data = JSON.parse(cleanJsonResponse(responseText));
+    return data.map((item: any) => {
+      const headline = item.title || item.headline || "";
+      const finalUrl = fixUrl(item.link || item.url, headline);
+      return { 
+        ...item, 
+        id: item.id || `mem-${Math.random().toString(36).substr(2, 9)}`, 
+        url: finalUrl,
+        link: finalUrl
+      };
+    });
+  } catch (err) {
+    console.error("Groq Memory Parse Error:", err, responseText);
+    throw new Error("Failed to fetch historical memory via Groq");
+  }
+};
+
+export const fetchLiveSignals = async () => {
+  const currentTime = new Date().toISOString();
+  const prompt = `Current Time: ${currentTime}
+  Generate the top 15 most impactful global macro-economic news headlines that would be relevant today. 
+  Since you don't have real-time search, provide highly realistic and plausible headlines based on current global trends (Geopolitics, Inflation, Central Banks, Energy).
+  
+  For each news item, provide:
+  1. headline: The headline.
+  2. content: A 2-3 sentence summary.
+  3. theme: A category (e.g., Monetary Policy, Geopolitics, Energy, Trade).
+  4. source: A plausible news organization.
+  5. url: A placeholder URL.
+  6. disruption_score: 1-10.
+  7. contagion_score: 1-10.
+  8. sentiment: -1.0 to 1.0.
+  9. impacts: A list of objects with 'region' (country name), 'relation' (positive/negative), and 'description'.
+  
+  Return ONLY the results as a JSON array of objects.`;
+
+  const messages = [{ role: "user", content: prompt }];
+  const responseText = await callGroq(messages);
+  
+  try {
+    const data = JSON.parse(cleanJsonResponse(responseText));
+    if (Array.isArray(data)) {
+      return data.filter(item => item.headline && item.content).map(item => ({
+        ...item,
+        url: fixUrl(item.url, item.headline)
+      }));
+    }
+    throw new Error("Invalid response format from Groq");
+  } catch (err) {
+    console.error("Groq Live Signals Parse Error:", err, responseText);
+    throw new Error("Failed to generate live signals via Groq");
+  }
+};
