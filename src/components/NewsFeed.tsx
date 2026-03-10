@@ -21,8 +21,8 @@ const isLikelyDirectArticle = (url: string | undefined): boolean => {
     const parsed = new URL(url);
     if (parsed.protocol !== "http:" && parsed.protocol !== "https:") return false;
     
-    const lowerUrl = url.toLowerCase().trim();
-    const hostname = parsed.hostname.toLowerCase();
+    const lowerUrl = (url ?? "").toLowerCase().trim();
+    const hostname = (parsed.hostname ?? "").toLowerCase();
     
     // Check for invalid/placeholder TLDs or domains
     if (hostname.includes("example.com") || hostname.includes("test.com") || hostname.includes("localhost")) return false;
@@ -36,7 +36,7 @@ const isLikelyDirectArticle = (url: string | undefined): boolean => {
 
     // Check for common news section pages that aren't specific articles
     const commonSections = ["world", "business", "finance", "politics", "news", "markets", "economy", "index.html", "index.php"];
-    if (pathSegments.length === 1 && commonSections.includes(pathSegments[0].toLowerCase())) return false;
+    if (pathSegments.length === 1 && commonSections.includes((pathSegments[0] ?? "").toLowerCase())) return false;
 
     return url.length > 15; // Specific articles usually have longer URLs
   } catch {

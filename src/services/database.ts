@@ -21,21 +21,46 @@ export interface NewsItem {
   contagion_score?: number;
 }
 
-const STORAGE_KEY = 'macromind_signals';
+const STORAGE_KEY = 'macromind_signals_v1.1'; // Change this to force a clear for all users
+const VERSION_KEY = 'macromind_storage_version';
+const CURRENT_VERSION = '1.1'; 
+
+// Auto-clear logic on module load
+if (typeof window !== 'undefined') {
+  const savedVersion = localStorage.getItem(VERSION_KEY);
+  if (savedVersion !== CURRENT_VERSION) {
+    localStorage.removeItem(STORAGE_KEY);
+    localStorage.setItem(VERSION_KEY, CURRENT_VERSION);
+    console.log(`Storage migrated to version ${CURRENT_VERSION}`);
+  }
+}
 
 const getStoredData = (): NewsItem[] => {
   if (typeof window === 'undefined') return [];
-  const data = localStorage.getItem(STORAGE_KEY);
-  return data ? JSON.parse(data) : [];
+  try {
+    const data = localStorage.getItem(STORAGE_KEY);
+    return data ? JSON.parse(data) : [];
+  } catch (e) {
+    console.error("Storage corruption detected, auto-clearing...", e);
+    localStorage.removeItem(STORAGE_KEY);
+    return [];
+  }
 };
 
 const setStoredData = (data: NewsItem[]) => {
+  if (typeof window === 'undefined') return;
   localStorage.setItem(STORAGE_KEY, JSON.stringify(data));
+};
+
+export const clearAllData = () => {
+  localStorage.removeItem(STORAGE_KEY);
+  window.location.reload(); // Reload to re-seed demo data
 };
 
 export const insertNews = (item: any) => {
   const news = getStoredData();
-  const normalizedHeadline = item.headline.toLowerCase().trim().replace(/\s+/g, ' ');
+  const headline = item?.headline ?? "";
+  const normalizedHeadline = headline.toLowerCase().trim().replace(/\s+/g, ' ');
   
   // Format the item correctly
   const newsItem: NewsItem = {
@@ -50,7 +75,7 @@ export const insertNews = (item: any) => {
     }
   };
 
-  const existingIndex = news.findIndex(n => n.headline.toLowerCase().trim().replace(/\s+/g, ' ') === normalizedHeadline);
+  const existingIndex = news.findIndex(n => (n?.headline ?? "").toLowerCase().trim().replace(/\s+/g, ' ') === normalizedHeadline);
 
   if (existingIndex !== -1) {
     news[existingIndex] = newsItem;
@@ -90,7 +115,7 @@ export const calculateHeatIndex = (theme: string): number => {
 export const getCognitiveLoad = () => {
   const news = getStoredData();
   const fourHoursAgo = Date.now() - 4 * 60 * 60 * 1000;
-  const highImpactCount = news.filter(n => (n.scores.disruption > 7) && new Date(n.timestamp).getTime() > fourHoursAgo).length;
+  const highImpactCount = news.filter(n => (n.scores?.disruption > 7) && new Date(n.timestamp).getTime() > fourHoursAgo).length;
   
   const load = Math.min(100, (highImpactCount / 3) * 100);
   return { 
@@ -110,5 +135,6 @@ export default {
   deleteNews,
   calculateHeatIndex,
   getCognitiveLoad,
-  bulkSaveNews
+  bulkSaveNews,
+  clearAllData
 };

@@ -31,10 +31,11 @@ const ASSET_DEFINITIONS = [
 export function AssetMatrix({ news }: { news: NewsItem[] }) {
   const assets = useMemo(() => {
     return ASSET_DEFINITIONS.map(assetDef => {
-      const relevantNews = news.filter(item => {
-        const text = `${item.headline} ${item.content} ${item.theme}`.toLowerCase();
-        return assetDef.keywords.some(keyword => text.includes(keyword.toLowerCase()));
+      const assetNews = news.filter(item => {
+        const text = `${item?.headline ?? ""} ${item?.content ?? ""} ${item?.theme ?? ""}`.toLowerCase();
+        return assetDef.keywords.some(keyword => text.includes((keyword ?? "").toLowerCase()));
       });
+
 
       let disruption = 2.0; // Base level
       if (relevantNews.length > 0) {

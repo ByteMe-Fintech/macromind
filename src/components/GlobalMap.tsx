@@ -68,7 +68,7 @@ const REGION_MAPPING: { [key: string]: string } = {
 };
 
 function normalizeRegionName(name: string): string {
-  const lower = name.toLowerCase().trim();
+  const lower = (name ?? "").toLowerCase().trim();
   if (COUNTRY_COORDS[name]) return name;
   
   // Check direct mappings
@@ -78,19 +78,19 @@ function normalizeRegionName(name: string): string {
   
   // Check if any COUNTRY_COORDS key is in the name
   for (const key of Object.keys(COUNTRY_COORDS)) {
-    if (lower.includes(key.toLowerCase())) return key;
+    if (lower.includes((key ?? "").toLowerCase())) return key;
   }
   
   return name;
 }
 
 function getSourceRegion(item: NewsItem): string {
-  const headline = item.headline.toLowerCase();
-  const text = `${item.content} ${item.theme}`.toLowerCase();
+  const headline = (item?.headline ?? "").toLowerCase();
+  const text = `${item?.content ?? ""} ${item?.theme ?? ""}`.toLowerCase();
   
   // 1. Check headline first for direct matches
   for (const region of Object.keys(COUNTRY_COORDS)) {
-    if (headline.includes(region.toLowerCase())) return region;
+    if (headline.includes((region ?? "").toLowerCase())) return region;
   }
   
   // 2. Check headline for mappings
@@ -99,7 +99,7 @@ function getSourceRegion(item: NewsItem): string {
   }
 
   // 3. Check impacts - use the first region that has coordinates
-  if (item.impacts && item.impacts.length > 0) {
+  if (item?.impacts && item.impacts.length > 0) {
     for (const imp of item.impacts) {
       const normalized = normalizeRegionName(imp.region);
       if (COUNTRY_COORDS[normalized]) return normalized;
@@ -108,7 +108,7 @@ function getSourceRegion(item: NewsItem): string {
 
   // 4. Fallback to content/theme
   for (const region of Object.keys(COUNTRY_COORDS)) {
-    if (text.includes(region.toLowerCase())) return region;
+    if (text.includes((region ?? "").toLowerCase())) return region;
   }
   
   for (const [country, region] of Object.entries(REGION_MAPPING)) {
