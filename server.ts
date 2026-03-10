@@ -2,7 +2,6 @@ import "dotenv/config";
 import express from "express";
 import { createServer as createViteServer } from "vite";
 import Groq from "groq-sdk";
-import { GoogleGenAI, Type } from "@google/genai";
 import { demoNews } from "./src/data/demoData";
 import db, { insertNews, getRecentNews, calculateHeatIndex, getNewsByTimeRange, clearDuplicates, deleteNews } from "./src/services/database";
 
@@ -25,25 +24,12 @@ async function startServer() {
       return groqClient;
     };
 
-    // Initialize Gemini client lazily
-    let geminiClient: GoogleGenAI | null = null;
-    const getGemini = () => {
-      if (!geminiClient) {
-        const apiKey = process.env.GEMINI_API_KEY;
-        if (!apiKey) return null;
-        // The @google/genai SDK expects an object: { apiKey: string }
-        geminiClient = new GoogleGenAI({ apiKey });
-      }
-      return geminiClient;
-    };
-
     // Health check at the top
     app.get("/api/health", (req, res) => {
       console.log(`[${new Date().toISOString()}] Health check requested`);
       res.json({ status: "ok", timestamp: new Date().toISOString() });
     });
 
-    // Groq API Proxy
     app.post("/api/groq/chat", async (req, res) => {
       try {
         const { messages, model = "llama-3.3-70b-versatile", temperature = 0.7 } = req.body;
@@ -66,68 +52,42 @@ async function startServer() {
       }
     });
 
-    app.get("/api/gemini/live-signals", async (req, res) => {
-      console.log(`[${new Date().toISOString()}] GET /api/gemini/live-signals requested (v2)`);
+    app.post("/api/groq/live-signals", async (req, res) => {
       try {
-        const gemini = getGemini();
-        if (!gemini) {
-          return res.status(400).json({ error: "Gemini API key not configured" });
-        }
+        const { prompt } = req.body;
+        const groq = getGroq();
+        if (!groq) return res.status(400).json({ error: "Groq API key not configured" });
 
-        const currentTime = new Date().toISOString();
-        const prompt = `Current Time: ${currentTime}
-        Search for the top 10 most impactful global macro-economic news headlines from the last 3 months.
-        Focus on Geopolitics, Central Banks, Inflation, Energy, and Trade.
-        
-        Return the data as a JSON array of objects with these properties:
-        headline, content, theme, source, url, disruption_score (1-10), contagion_score (1-10), sentiment (-1.0 to 1.0), impacts (array of {region, relation, description}).`;
-
-        const result = await gemini.models.generateContent({
-          model: "gemini-2.0-flash",
-          contents: prompt,
-          config: {
-            responseMimeType: "application/json",
-          }
+        const completion = await groq.chat.completions.create({
+          messages: [{ role: "user", content: prompt }],
+          model: "llama-3.3-70b-versatile",
+          temperature: 0.7,
+          response_format: { type: "json_object" }
         });
 
-        // The @google/genai response has result.text as a shortcut or access parts directly
-        const text = result.text();
-        res.json(JSON.parse(text));
+        res.json(JSON.parse(completion.choices[0].message.content || "{}"));
       } catch (error: any) {
-        console.error("Gemini Live Signals Error:", error);
+        console.error("Groq Live Signals Error:", error);
         res.status(500).json({ error: error.message || "Failed to fetch live signals" });
       }
     });
 
-    app.get("/api/gemini/historical-memory", async (req, res) => {
+    app.post("/api/groq/historical-memory", async (req, res) => {
       try {
-        const { theme } = req.query;
-        if (!theme) return res.status(400).json({ error: "Theme is required" });
+        const { prompt } = req.body;
+        const groq = getGroq();
+        if (!groq) return res.status(400).json({ error: "Groq API key not configured" });
 
-        const gemini = getGemini();
-        if (!gemini) {
-          return res.status(400).json({ error: "Gemini API key not configured" });
-        }
-
-        const prompt = `Find 3 distinct, real historical macro-economic events from the last 20 years that relate to the theme: "${theme}". 
-        Return a JSON array of objects with:
-        - date: YYYY-MM-DD
-        - title: The actual headline or event name
-        - summary: 2-3 sentence analysis.
-        - link: A REAL, working DIRECT URL to the event.`;
-
-        const result = await gemini.models.generateContent({
-          model: "gemini-2.0-flash",
-          contents: prompt,
-          config: {
-            responseMimeType: "application/json",
-          }
+        const completion = await groq.chat.completions.create({
+          messages: [{ role: "user", content: prompt }],
+          model: "llama-3.1-8b-instant",
+          temperature: 0.1,
+          response_format: { type: "json_object" }
         });
 
-        const text = result.text();
-        res.json(JSON.parse(text));
+        res.json(JSON.parse(completion.choices[0].message.content || "{}"));
       } catch (error: any) {
-        console.error("Gemini Historical Memory Error:", error);
+        console.error("Groq Historical Memory Error:", error);
         res.status(500).json({ error: error.message || "Failed to fetch historical memory" });
       }
     });

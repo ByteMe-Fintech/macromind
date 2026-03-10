@@ -122,9 +122,7 @@ export const getDebate = async (headline: string, content: string) => {
 };
 
 export const getHistoricalMemory = async (theme: string) => {
-  const currentTime = new Date().toISOString();
-  const prompt = `Current Time: ${currentTime}
-  Find 3 distinct, real historical macro-economic events from the last 20 years that relate to the theme: "${theme}". 
+  const prompt = `Find 3 distinct, real historical macro-economic events from the last 20 years that relate to the theme: "${theme}". 
   
   For each event, you MUST provide:
   1. 'date': YYYY-MM-DD
@@ -132,14 +130,21 @@ export const getHistoricalMemory = async (theme: string) => {
   3. 'summary': 2-3 sentence analysis.
   4. 'link': A relevant URL (e.g. from Wikipedia or a major news site).
   
-  Return ONLY a JSON array of objects.`;
+  Return ONLY a JSON object with a key 'events' containing the array.`;
 
-  const messages = [{ role: "user", content: prompt }];
-  const responseText = await callGroq(messages);
-  
   try {
-    const data = JSON.parse(cleanJsonResponse(responseText));
-    return data.map((item: any) => {
+    const origin = window.location.origin;
+    const response = await fetch(`${origin}/api/groq/historical-memory`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ prompt }),
+    });
+
+    if (!response.ok) throw new Error("Failed to fetch historical memory from Groq");
+    const data = await response.json();
+    const events = data.events || [];
+
+    return events.map((item: any) => {
       const headline = item.title || item.headline || "";
       const finalUrl = fixUrl(item.link || item.url, headline);
       return { 
@@ -150,8 +155,8 @@ export const getHistoricalMemory = async (theme: string) => {
       };
     });
   } catch (err) {
-    console.error("Groq Memory Parse Error:", err, responseText);
-    throw new Error("Failed to fetch historical memory via Groq");
+    console.error("Groq Memory Error:", err);
+    throw err;
   }
 };
 
@@ -172,22 +177,32 @@ export const fetchLiveSignals = async () => {
   8. sentiment: -1.0 to 1.0.
   9. impacts: A list of objects with 'region' (country name), 'relation' (positive/negative), and 'description'.
   
-  Return ONLY the results as a JSON array of objects.`;
+  Return ONLY the results as a JSON object with a key 'signals' containing the array.`;
 
-  const messages = [{ role: "user", content: prompt }];
-  const responseText = await callGroq(messages);
-  
   try {
-    const data = JSON.parse(cleanJsonResponse(responseText));
-    if (Array.isArray(data)) {
-      return data.filter(item => item.headline && item.content).map(item => ({
-        ...item,
-        url: fixUrl(item.url, item.headline)
-      }));
-    }
-    throw new Error("Invalid response format from Groq");
+    const origin = window.location.origin;
+    const response = await fetch(`${origin}/api/groq/live-signals`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ prompt }),
+    });
+
+    if (!response.ok) throw new Error("Failed to generate live signals from Groq");
+    const data = await response.json();
+    const signals = data.signals || [];
+
+    return signals.map((item: any) => ({
+      ...item,
+      id: item.id || `live-${Math.random().toString(36).substr(2, 9)}`,
+      url: fixUrl(item.url, item.headline),
+      scores: {
+        disruption: item.disruption_score,
+        contagion: item.contagion_score,
+        heat: 5
+      }
+    }));
   } catch (err) {
-    console.error("Groq Live Signals Parse Error:", err, responseText);
-    throw new Error("Failed to generate live signals via Groq");
+    console.error("Groq Live Signals Error:", err);
+    throw err;
   }
 };
