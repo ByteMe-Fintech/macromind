@@ -37,10 +37,9 @@ export default function App() {
   useEffect(() => {
     const fetchData = async (retryCount = 0) => {
       try {
-        const origin = window.location.origin;
         const [newsRes, loadRes] = await Promise.all([
-          fetch(`${origin}/api/news`),
-          fetch(`${origin}/api/cognitive-load`)
+          fetch('/api/news'),
+          fetch('/api/cognitive-load')
         ]);
         
         if (!newsRes.ok || !loadRes.ok) throw new Error('Failed to fetch system data');
@@ -89,8 +88,7 @@ export default function App() {
 
   const handleDeleteNews = async (id: string) => {
     try {
-      const origin = window.location.origin;
-      const res = await fetch(`${origin}/api/news/${id}`, { method: 'DELETE' });
+      const res = await fetch(`/api/news/${id}`, { method: 'DELETE' });
       if (res.ok) {
         setNews(prev => prev.filter(item => item.id !== id));
         setSelectedNewsIds(prev => prev.filter(sid => sid !== id));
@@ -131,19 +129,19 @@ export default function App() {
         };
       });
 
-      // Save to backend
-      const origin = window.location.origin;
-      const saveRes = await fetch(`${origin}/api/news/bulk-save`, {
+      // Save to backend using relative path
+      const saveRes = await fetch('/api/news/bulk-save', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ items: newsItems })
       });
 
       if (!saveRes.ok) {
-        throw new Error('Failed to save synced news to database');
+        const errorData = await saveRes.json().catch(() => ({ error: 'Unknown server error' }));
+        throw new Error(`Failed to save synced news: ${errorData.error || saveRes.statusText}`);
       }
       
-      const newsRes = await fetch(`${origin}/api/news`);
+      const newsRes = await fetch('/api/news');
       const newsData = await newsRes.json();
       setNews(newsData);
       setSelectedNewsIds([]); // Clear filters on sync
