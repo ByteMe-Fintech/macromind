@@ -2,8 +2,6 @@
 
 MacroMind is a high-fidelity dashboard for real-time global macro-economic signal analysis. It ingests live news, performs multi-agent causal reasoning, and visualizes complex global interdependencies through interactive maps and graphs.
 
-![MacroMind Dashboard](https://github.com/user-attachments/assets/0aa67016-6eaf-458a-adb2-6e31a0763ed6)
-
 ## 🌟 Core Features
 
 - **Live Signal Ingestion**: Real-time monitoring of global headlines using Gemini-powered search and summarization.
