@@ -47,7 +47,10 @@ export const insertNews = (item: any) => {
       WHERE id = ?
     `);
     const impactsJson = item.impacts ? JSON.stringify(item.impacts) : '[]';
-    stmt.run(item.content, item.url || '', item.theme, item.source, item.timestamp, item.scores.disruption, item.scores.contagion, item.sentiment || 0, impactsJson, existing.id);
+    const disruption = item.scores?.disruption ?? item.disruption_score ?? 0;
+    const contagion = item.scores?.contagion ?? item.contagion_score ?? 0;
+    
+    stmt.run(item.content, item.url || '', item.theme, item.source, item.timestamp, disruption, contagion, item.sentiment || 0, impactsJson, existing.id);
     return;
   }
 
@@ -56,7 +59,10 @@ export const insertNews = (item: any) => {
     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   `);
   const impactsJson = item.impacts ? JSON.stringify(item.impacts) : '[]';
-  stmt.run(item.id, item.headline, item.content, item.url || '', item.theme, item.source, item.timestamp, item.scores.disruption, item.scores.contagion, item.sentiment || 0, impactsJson);
+  const disruption = item.scores?.disruption ?? item.disruption_score ?? 0;
+  const contagion = item.scores?.contagion ?? item.contagion_score ?? 0;
+
+  stmt.run(item.id, item.headline, item.content, item.url || '', item.theme, item.source, item.timestamp, disruption, contagion, item.sentiment || 0, impactsJson);
 };
 
 export const clearDuplicates = () => {
@@ -81,7 +87,12 @@ export const getRecentNews = (limit = 50) => {
   const rows = db.prepare('SELECT * FROM news ORDER BY timestamp DESC LIMIT ?').all(limit) as any[];
   return rows.map(row => ({
     ...row,
-    impacts: JSON.parse(row.impacts || '[]')
+    impacts: JSON.parse(row.impacts || '[]'),
+    scores: {
+      disruption: row.disruption_score,
+      contagion: row.contagion_score,
+      heat: calculateHeatIndex(row.theme)
+    }
   }));
 };
 
@@ -94,12 +105,10 @@ export const getNewsByTimeRange = (startTime: string, endTime: string) => {
 };
 
 export const calculateHeatIndex = (theme: string) => {
-  // Calculate frequency of theme in the last 24 hours vs last 7 days
-  const now = new Date().toISOString();
+  // Calculate frequency of theme in the last 24 hours
   const yesterday = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
-  
   const count = db.prepare('SELECT COUNT(*) as count FROM news WHERE theme = ? AND timestamp > ?').get(theme, yesterday) as any;
-  return Math.min(10, (count.count / 5) * 10); // Simple normalization
+  return Math.min(10, (count.count / 5) * 10);
 };
 
 export default db;
