@@ -4,10 +4,6 @@ export type { CausalNode, CausalLink, DebateResponse } from "./groq";
 
 export type AIProvider = "groq";
 
-export const setProvider = (provider: AIProvider) => {
-  localStorage.setItem("ai_provider", provider);
-};
-
 export const getProvider = (): AIProvider => {
   return "groq";
 };
