@@ -27,7 +27,18 @@ async function startServer() {
     // Health check at the top
     app.get("/api/health", (req, res) => {
       console.log(`[${new Date().toISOString()}] Health check requested`);
-      res.json({ status: "ok", timestamp: new Date().toISOString() });
+      try {
+        const count = db.prepare('SELECT COUNT(*) as count FROM news').get() as any;
+        res.json({ 
+          status: "ok", 
+          db: "connected",
+          newsCount: count.count,
+          timestamp: new Date().toISOString() 
+        });
+      } catch (dbErr) {
+        console.error("Database health check failed:", dbErr);
+        res.status(500).json({ status: "error", db: "disconnected", error: (dbErr as Error).message });
+      }
     });
 
     app.post("/api/groq/chat", async (req, res) => {

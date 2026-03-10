@@ -1,7 +1,11 @@
 import Database from 'better-sqlite3';
 import { join } from 'path';
+import { existsSync, mkdirSync } from 'fs';
 
-const db = new Database('macromind.db');
+// Use an absolute path for the database file to avoid issues in cloud environments
+const DB_PATH = process.env.DATABASE_URL || join(process.cwd(), 'macromind.db');
+
+const db = new Database(DB_PATH);
 
 // Initialize tables
 db.exec(`
