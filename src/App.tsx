@@ -20,6 +20,9 @@ function cn(...inputs: ClassValue[]) {
 
 import { getStableId } from './utils/id';
 
+import { insertNews, getRecentNews, deleteNews, bulkSaveNews, getCognitiveLoad } from './services/database';
+import { demoNews } from './data/demoData';
+
 export default function App() {
   const [news, setNews] = useState<NewsItem[]>([]);
   const [selectedNewsIds, setSelectedNewsIds] = useState<string[]>([]);
@@ -35,34 +38,21 @@ export default function App() {
   }, [news, selectedNewsIds]);
 
   useEffect(() => {
-    const fetchData = async (retryCount = 0) => {
-      try {
-        const [newsRes, loadRes] = await Promise.all([
-          fetch('/api/news'),
-          fetch('/api/cognitive-load')
-        ]);
-        
-        if (!newsRes.ok || !loadRes.ok) throw new Error('Failed to fetch system data');
-        
-        const [newsData, loadData] = await Promise.all([
-          newsRes.json(),
-          loadRes.json()
-        ]);
-        
-        setNews(newsData);
-        setCognitiveLoad(loadData);
-      } catch (err) {
-        console.error('Data sync failed:', err);
-        // Retry once after 2 seconds if it's a fetch error
-        if (retryCount < 1 && err instanceof TypeError && err.message === 'Failed to fetch') {
-          console.log('Retrying data sync in 2s...');
-          setTimeout(() => fetchData(retryCount + 1), 2000);
-        }
+    const syncData = () => {
+      let currentNews = getRecentNews();
+      
+      // Seed demo data if empty
+      if (currentNews.length === 0) {
+        bulkSaveNews(demoNews);
+        currentNews = getRecentNews();
       }
+      
+      setNews(currentNews);
+      setCognitiveLoad(getCognitiveLoad());
     };
 
-    fetchData();
-    const interval = setInterval(() => fetchData(), 30000); // Sync every 30s
+    syncData();
+    const interval = setInterval(syncData, 30000);
     return () => clearInterval(interval);
   }, []);
 
@@ -87,16 +77,13 @@ export default function App() {
   }, []);
 
   const handleDeleteNews = async (id: string) => {
-    try {
-      const res = await fetch(`/api/news/${id}`, { method: 'DELETE' });
-      if (res.ok) {
-        setNews(prev => prev.filter(item => item.id !== id));
-        setSelectedNewsIds(prev => prev.filter(sid => sid !== id));
-        if (selectedNews?.id === id) setSelectedNews(null);
-      }
-    } catch (err) {
-      console.error('Delete failed:', err);
-    }
+    deleteNews(id);
+    const updatedNews = getRecentNews();
+    setNews(updatedNews);
+    setCognitiveLoad(getCognitiveLoad());
+    
+    setSelectedNewsIds(prev => prev.filter(sid => sid !== id));
+    if (selectedNews?.id === id) setSelectedNews(null);
   };
 
   const handleSync = async () => {
@@ -129,22 +116,14 @@ export default function App() {
         };
       });
 
-      // Save to backend using relative path
-      const saveRes = await fetch('/api/news/bulk-save', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ items: newsItems })
-      });
-
-      if (!saveRes.ok) {
-        const errorData = await saveRes.json().catch(() => ({ error: 'Unknown server error' }));
-        throw new Error(`Failed to save synced news: ${errorData.error || saveRes.statusText}`);
-      }
+      // Save directly to LocalStorage
+      bulkSaveNews(newsItems);
       
-      const newsRes = await fetch('/api/news');
-      const newsData = await newsRes.json();
-      setNews(newsData);
-      setSelectedNewsIds([]); // Clear filters on sync
+      // Update local state immediately
+      const updatedNews = getRecentNews();
+      setNews(updatedNews);
+      setCognitiveLoad(getCognitiveLoad());
+      setSelectedNewsIds([]);
     } catch (err) {
       console.error(err);
       alert(`Sync Error: ${err instanceof Error ? err.message : 'Unknown error'}`);

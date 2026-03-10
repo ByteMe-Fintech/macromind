@@ -1,118 +1,114 @@
-import Database from 'better-sqlite3';
-import { join } from 'path';
-import { existsSync, mkdirSync } from 'fs';
+// src/services/database.ts
+// This service now handles data persistence in the browser's LocalStorage, 
+// allowing the app to run on static hosting like AWS Amplify without a Node.js server.
 
-// Use an absolute path for the database file to avoid issues in cloud environments
-const DB_PATH = process.env.DATABASE_URL || join(process.cwd(), 'macromind.db');
-
-const db = new Database(DB_PATH);
-
-// Initialize tables
-db.exec(`
-  CREATE TABLE IF NOT EXISTS news (
-    id TEXT PRIMARY KEY,
-    headline TEXT UNIQUE,
-    content TEXT,
-    url TEXT,
-    theme TEXT,
-    source TEXT,
-    timestamp DATETIME,
-    disruption_score REAL,
-    contagion_score REAL,
-    sentiment REAL,
-    impacts TEXT
-  );
-
-  CREATE TABLE IF NOT EXISTS themes (
-    name TEXT PRIMARY KEY,
-    description TEXT,
-    base_weight REAL
-  );
-`);
-
-// Migration: Add url column if it doesn't exist
-try {
-  db.exec('ALTER TABLE news ADD COLUMN url TEXT');
-} catch (e) {
-  // Column likely already exists
+export interface NewsItem {
+  id: string;
+  headline: string;
+  content: string;
+  url?: string;
+  theme: string;
+  source: string;
+  timestamp: string;
+  sentiment: number;
+  impacts: any[];
+  scores: {
+    disruption: number;
+    contagion: number;
+    heat: number;
+  };
+  disruption_score?: number;
+  contagion_score?: number;
 }
 
-export const insertNews = (item: any) => {
-  // Check if headline already exists to prevent duplicates with different IDs
-  const normalizedHeadline = item.headline.toLowerCase().trim().replace(/\s+/g, ' ');
-  const existing = db.prepare('SELECT id FROM news WHERE LOWER(TRIM(headline)) = ?').get(normalizedHeadline) as any;
-  
-  if (existing) {
-    // Update existing record instead of inserting new one
-    const stmt = db.prepare(`
-      UPDATE news SET 
-        content = ?, url = ?, theme = ?, source = ?, timestamp = ?, 
-        disruption_score = ?, contagion_score = ?, sentiment = ?, impacts = ?
-      WHERE id = ?
-    `);
-    const impactsJson = item.impacts ? JSON.stringify(item.impacts) : '[]';
-    const disruption = item.scores?.disruption ?? item.disruption_score ?? 0;
-    const contagion = item.scores?.contagion ?? item.contagion_score ?? 0;
-    
-    stmt.run(item.content, item.url || '', item.theme, item.source, item.timestamp, disruption, contagion, item.sentiment || 0, impactsJson, existing.id);
-    return;
-  }
+const STORAGE_KEY = 'macromind_signals';
 
-  const stmt = db.prepare(`
-    INSERT OR REPLACE INTO news (id, headline, content, url, theme, source, timestamp, disruption_score, contagion_score, sentiment, impacts)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-  `);
-  const impactsJson = item.impacts ? JSON.stringify(item.impacts) : '[]';
-  const disruption = item.scores?.disruption ?? item.disruption_score ?? 0;
-  const contagion = item.scores?.contagion ?? item.contagion_score ?? 0;
-
-  stmt.run(item.id, item.headline, item.content, item.url || '', item.theme, item.source, item.timestamp, disruption, contagion, item.sentiment || 0, impactsJson);
+const getStoredData = (): NewsItem[] => {
+  if (typeof window === 'undefined') return [];
+  const data = localStorage.getItem(STORAGE_KEY);
+  return data ? JSON.parse(data) : [];
 };
 
-export const clearDuplicates = () => {
-  console.log("Running database cleanup for duplicates...");
-  // Remove rows with duplicate headlines, keeping the most recent one
-  db.exec(`
-    DELETE FROM news 
-    WHERE id NOT IN (
-      SELECT id FROM (
-        SELECT id, ROW_NUMBER() OVER (PARTITION BY LOWER(TRIM(headline)) ORDER BY timestamp DESC) as rn
-        FROM news
-      ) WHERE rn = 1
-    )
-  `);
+const setStoredData = (data: NewsItem[]) => {
+  localStorage.setItem(STORAGE_KEY, JSON.stringify(data));
+};
+
+export const insertNews = (item: any) => {
+  const news = getStoredData();
+  const normalizedHeadline = item.headline.toLowerCase().trim().replace(/\s+/g, ' ');
+  
+  // Format the item correctly
+  const newsItem: NewsItem = {
+    ...item,
+    id: item.id || Math.random().toString(36).substr(2, 9),
+    timestamp: item.timestamp || new Date().toISOString(),
+    impacts: item.impacts || [],
+    scores: item.scores || {
+      disruption: item.disruption_score || 0,
+      contagion: item.contagion_score || 0,
+      heat: calculateHeatIndex(item.theme)
+    }
+  };
+
+  const existingIndex = news.findIndex(n => n.headline.toLowerCase().trim().replace(/\s+/g, ' ') === normalizedHeadline);
+
+  if (existingIndex !== -1) {
+    news[existingIndex] = newsItem;
+  } else {
+    news.push(newsItem);
+  }
+
+  setStoredData(news);
+};
+
+export const getRecentNews = (limit = 50): NewsItem[] => {
+  const news = getStoredData();
+  return news
+    .sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime())
+    .slice(0, limit)
+    .map(item => ({
+      ...item,
+      scores: {
+        ...item.scores,
+        heat: calculateHeatIndex(item.theme)
+      }
+    }));
 };
 
 export const deleteNews = (id: string) => {
-  db.prepare('DELETE FROM news WHERE id = ?').run(id);
+  const news = getStoredData();
+  setStoredData(news.filter(n => n.id !== id));
 };
 
-export const getRecentNews = (limit = 50) => {
-  const rows = db.prepare('SELECT * FROM news ORDER BY timestamp DESC LIMIT ?').all(limit) as any[];
-  return rows.map(row => ({
-    ...row,
-    impacts: JSON.parse(row.impacts || '[]'),
-    scores: {
-      disruption: row.disruption_score,
-      contagion: row.contagion_score,
-      heat: calculateHeatIndex(row.theme)
-    }
-  }));
+export const calculateHeatIndex = (theme: string): number => {
+  const news = getStoredData();
+  const yesterday = Date.now() - 24 * 60 * 60 * 1000;
+  const count = news.filter(n => n.theme === theme && new Date(n.timestamp).getTime() > yesterday).length;
+  return Math.min(10, (count / 5) * 10);
 };
 
-export const getNewsByTimeRange = (startTime: string, endTime: string) => {
-  const rows = db.prepare('SELECT * FROM news WHERE timestamp >= ? AND timestamp <= ? ORDER BY timestamp DESC').all(startTime, endTime) as any[];
-  return rows.map(row => ({
-    ...row,
-    impacts: JSON.parse(row.impacts || '[]')
-  }));
+export const getCognitiveLoad = () => {
+  const news = getStoredData();
+  const fourHoursAgo = Date.now() - 4 * 60 * 60 * 1000;
+  const highImpactCount = news.filter(n => (n.scores.disruption > 7) && new Date(n.timestamp).getTime() > fourHoursAgo).length;
+  
+  const load = Math.min(100, (highImpactCount / 3) * 100);
+  return { 
+    load, 
+    status: load > 80 ? "Critical" : load > 50 ? "Elevated" : "Optimal",
+    recommendation: load > 80 ? "Throttle Non-Essential Signals" : "Full Stream Active"
+  };
 };
 
-export const calculateHeatIndex = (theme: string) => {
-  // Calculate frequency of theme in the last 24 hours
-  const yesterday = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
-  const count = db.prepare('SELECT COUNT(*) as count FROM news WHERE theme = ? AND timestamp > ?').get(theme, yesterday) as any;
-  return Math.min(10, (count.count / 5) * 10);
+export const bulkSaveNews = (items: any[]) => {
+  items.forEach(item => insertNews(item));
 };
 
-export default db;
+export default {
+  insertNews,
+  getRecentNews,
+  deleteNews,
+  calculateHeatIndex,
+  getCognitiveLoad,
+  bulkSaveNews
+};
