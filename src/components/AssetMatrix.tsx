@@ -38,8 +38,8 @@ export function AssetMatrix({ news }: { news: NewsItem[] }) {
 
 
       let disruption = 2.0; // Base level
-      if (relevantNews.length > 0) {
-        const scores = relevantNews
+      if (assetNews.length > 0) {
+        const scores = assetNews
           .map(item => item.scores?.disruption || 0)
           .sort((a, b) => b - a)
           .slice(0, 3);
